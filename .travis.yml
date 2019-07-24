@@ -1,0 +1,9 @@
+language: go
+go:
+  - 1.12
+services:
+  - docker
+script:
+  - pwd
+  - ls
+  - make test
