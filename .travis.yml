@@ -4,6 +4,11 @@ go:
 services:
   - docker
 install:
+  - wget -O dind-cluster.sh https://github.com/kubernetes-sigs/kubeadm-dind-cluster/releases/download/v0.2.0/dind-cluster-v1.14.sh
+  - chmod +x dind-cluster.sh
+  - ./dind-cluster.sh up
+  - export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
+  - kubectl get nodes
   - docker run -d -p 5000:5000 --name registry registry:2
 script:
   - pwd
