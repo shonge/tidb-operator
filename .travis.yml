@@ -10,7 +10,7 @@ install:
   - export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
   - manifests/local-dind/dind-cluster-v1.12.sh up
   - kubectl get cs
-#  - docker run -d -p 5000:5000 --name registry registry:2
+#   - docker run -d -p 5000:5000 --name registry registry:2
 script:
   - pwd
   - ls
