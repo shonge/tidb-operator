@@ -4,13 +4,14 @@ go:
 services:
   - docker
 install:
+  - docker run -d -p 5000:5000 --name registry registry:2
   - curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
   - chmod +x ./kubectl
   - mkdir $HOME/.kubeadm-dind-cluster/ && mv ./kubectl $HOME/.kubeadm-dind-cluster/
   - export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
   - manifests/local-dind/dind-cluster-v1.12.sh up
   - kubectl get cs
-#   - docker run -d -p 5000:5000 --name registry registry:2
+
 script:
   - pwd
   - ls
