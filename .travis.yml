@@ -18,4 +18,6 @@ script:
   - make test
   - make docker-push e2e-docker-push
   - kubectl apply -f tests/manifests/e2e/e2e.yaml
-  - kubectl -n=tidb-operator-e2e get po -w
+  - sleep 10
+  - kubectl -n=tidb-operator-e2e get po
+  - kubectl -n=tidb-operator-e2e logs -f tidb-operator-e2e
