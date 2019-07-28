@@ -4,6 +4,9 @@ go:
 services:
   - docker
 install:
+  - curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+  - chmod +x ./kubectl
+  - mv ./kubectl /usr/local/bin/kubectl
   - manifests/local-dind/dind-cluster-v1.12.sh up
   - export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
   - kubectl get nodes
