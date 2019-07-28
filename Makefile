@@ -2,7 +2,7 @@
 LDFLAGS = $(if $(DEBUGGER),,-s -w) $(shell ./hack/version.sh)
 
 # SET DOCKER_REPO to change the docker repository
-DOCKER_REPO := $(if $(DOCKER_REPO),$(DOCKER_REPO),pingcap)
+DOCKER_PROJECT := $(if $(DOCKER_PROJECT),$(DOCKER_PROJECT),pingcap)
 
 # SET DOCKER_REGISTRY to change the docker registry
 DOCKER_REGISTRY := $(if $(DOCKER_REGISTRY),$(DOCKER_REGISTRY),localhost:5000)
@@ -28,10 +28,10 @@ FAIL_ON_STDOUT := awk '{ print } END { if (NR > 0) { exit 1 } }'
 default: build
 
 docker-push: docker
-	docker push "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-operator:latest"
+	docker push "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-operator:latest"
 
 docker: build
-	docker build --tag "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-operator:latest" images/tidb-operator
+	docker build --tag "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-operator:latest" images/tidb-operator
 
 build: controller-manager scheduler discovery admission-controller
 
@@ -52,7 +52,7 @@ e2e-setup:
 	@GO111MODULE=on CGO_ENABLED=0 go get github.com/onsi/ginkgo@v1.6.0
 
 e2e-docker-push: e2e-docker
-	docker push "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-operator-e2e:latest"
+	docker push "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-operator-e2e:latest"
 
 e2e-docker: e2e-build
 	[ -d tests/images/e2e/tidb-operator ] && rm -r tests/images/e2e/tidb-operator || true
@@ -63,7 +63,7 @@ e2e-docker: e2e-build
 	cp -r charts/tidb-cluster tests/images/e2e
 	cp -r charts/tidb-backup tests/images/e2e
 	cp -r manifests tests/images/e2e
-	docker build -t "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-operator-e2e:latest" tests/images/e2e
+	docker build -t "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-operator-e2e:latest" tests/images/e2e
 
 e2e-build: e2e-setup
 	$(GO) -ldflags '$(LDFLAGS)' -o tests/images/e2e/bin/e2e tests/cmd/e2e/main.go
@@ -72,10 +72,10 @@ stability-test-build:
 	$(GO) -ldflags '$(LDFLAGS)' -o tests/images/stability-test/bin/stability-test tests/cmd/stability/*.go
 
 stability-test-docker: stability-test-build
-	docker build -t "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-operator-stability-test:latest" tests/images/stability-test
+	docker build -t "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-operator-stability-test:latest" tests/images/stability-test
 
 stability-test-push: stability-test-docker
-	docker push "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-operator-stability-test:latest"
+	docker push "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-operator-stability-test:latest"
 
 fault-trigger:
 	$(GO) -ldflags '$(LDFLAGS)' -o tests/images/fault-trigger/bin/fault-trigger tests/cmd/fault-trigger/*.go
@@ -141,14 +141,14 @@ cli:
 	$(GO) -ldflags '$(LDFLAGS)' -o tkctl cmd/tkctl/main.go
 
 debug-docker-push: debug-build-docker
-	docker push "${DOCKER_REGISTRY}/${DOCKER_REPO}/debug-launcher:latest"
-	docker push "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-control:latest"
-	docker push "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-debug:latest"
+	docker push "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/debug-launcher:latest"
+	docker push "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-control:latest"
+	docker push "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-debug:latest"
 
 debug-build-docker: debug-build
-	docker build -t "${DOCKER_REGISTRY}/${DOCKER_REPO}/debug-launcher:latest" misc/images/debug-launcher
-	docker build -t "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-control:latest" misc/images/tidb-control
-	docker build -t "${DOCKER_REGISTRY}/${DOCKER_REPO}/tidb-debug:latest" misc/images/tidb-debug
+	docker build -t "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/debug-launcher:latest" misc/images/debug-launcher
+	docker build -t "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-control:latest" misc/images/tidb-control
+	docker build -t "${DOCKER_REGISTRY}/${DOCKER_PROJECT}/tidb-debug:latest" misc/images/tidb-debug
 
 debug-build:
 	$(GO) -ldflags '$(LDFLAGS)' -o misc/images/debug-launcher/bin/debug-launcher misc/cmd/debug-launcher/main.go

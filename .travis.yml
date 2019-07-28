@@ -12,6 +12,7 @@ install:
   - export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
   - manifests/local-dind/dind-cluster-v1.12.sh up
   - kubectl get cs
+  - docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}
 
 script:
   - pwd
