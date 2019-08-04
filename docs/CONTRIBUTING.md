@@ -58,7 +58,7 @@ Set your clone to track upstream repository.
 
 ```sh
 $ cd $working_dir/tidb-operator
-$ git remote add upstream git@github.com:pingcap/tidb-operator.git
+$ git remote add upstream https://github.com/pingcap/tidb-operator
 ```
 
 Since you don't have write access to the upstream repository, you need to disable pushing to upstream master:
@@ -148,7 +148,7 @@ Before you commit, make sure that all the checks and unit tests are passed:
 
 ```sh
 $ make check
-$ meke test
+$ make test
 ```
 
 Then commit your changes.

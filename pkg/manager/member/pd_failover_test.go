@@ -23,6 +23,7 @@ import (
 	"github.com/pingcap/tidb-operator/pkg/apis/pingcap.com/v1alpha1"
 	"github.com/pingcap/tidb-operator/pkg/client/clientset/versioned/fake"
 	"github.com/pingcap/tidb-operator/pkg/controller"
+	"github.com/pingcap/tidb-operator/pkg/pdapi"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,10 +56,9 @@ func TestPDFailoverFailover(t *testing.T) {
 		test.update(tc)
 
 		pdFailover, pvcIndexer, podIndexer, fakePDControl, fakePodControl, fakePVCControl := newFakePDFailover()
-		pdClient := controller.NewFakePDClient()
-		fakePDControl.SetPDClient(tc, pdClient)
+		pdClient := controller.NewFakePDClient(fakePDControl, tc)
 
-		pdClient.AddReaction(controller.DeleteMemberByIDActionType, func(action *controller.Action) (interface{}, error) {
+		pdClient.AddReaction(pdapi.DeleteMemberByIDActionType, func(action *pdapi.Action) (interface{}, error) {
 			if test.delMemberFailed {
 				return nil, fmt.Errorf("failed to delete member")
 			}
@@ -242,9 +242,11 @@ func TestPDFailoverFailover(t *testing.T) {
 			expectFn: func(tc *v1alpha1.TidbCluster, _ *pdFailover) {
 				g.Expect(int(tc.Spec.PD.Replicas)).To(Equal(3))
 				g.Expect(len(tc.Status.PD.FailureMembers)).To(Equal(1))
-				g.Expect(tc.Status.PD.FailureMembers).To(Equal(map[string]v1alpha1.PDFailureMember{
-					"test-pd-1": {PodName: "test-pd-1", MemberID: "12891273174085095651", PVCUID: "pvc-1-uid", MemberDeleted: false},
-				}))
+				failureMembers := tc.Status.PD.FailureMembers["test-pd-1"]
+				g.Expect(failureMembers.PodName).To(Equal("test-pd-1"))
+				g.Expect(failureMembers.MemberID).To(Equal("12891273174085095651"))
+				g.Expect(string(failureMembers.PVCUID)).To(Equal("pvc-1-uid"))
+				g.Expect(failureMembers.MemberDeleted).To(BeFalse())
 			},
 		},
 		{
@@ -520,10 +522,10 @@ func TestPDFailoverRecovery(t *testing.T) {
 	}
 }
 
-func newFakePDFailover() (*pdFailover, cache.Indexer, cache.Indexer, *controller.FakePDControl, *controller.FakePodControl, *controller.FakePVCControl) {
+func newFakePDFailover() (*pdFailover, cache.Indexer, cache.Indexer, *pdapi.FakePDControl, *controller.FakePodControl, *controller.FakePVCControl) {
 	cli := fake.NewSimpleClientset()
 	kubeCli := kubefake.NewSimpleClientset()
-	pdControl := controller.NewFakePDControl()
+	pdControl := pdapi.NewFakePDControl()
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeCli, 0)
 	podInformer := kubeInformerFactory.Core().V1().Pods()
 	pvcInformer := kubeInformerFactory.Core().V1().PersistentVolumeClaims()
