@@ -48,6 +48,9 @@ func NewBackupManager(deps *controller.Dependencies) backup.BackupManager {
 }
 
 func (bm *backupManager) Sync(backup *v1alpha1.Backup) error {
+	// because a finalizer is installed on the backup on creation, when backup is deleted,
+	// backup.DeletionTimestamp will be set, controller will be informed with an onUpdate event,
+	// this is the moment that we can do clean up work.
 	if err := bm.backupCleaner.Clean(backup); err != nil {
 		return err
 	}
@@ -65,7 +68,32 @@ func (bm *backupManager) syncBackupJob(backup *v1alpha1.Backup) error {
 	name := backup.GetName()
 	backupJobName := backup.GetBackupJobName()
 
-	err := backuputil.ValidateBackup(backup)
+	var err error
+	if backup.Spec.BR == nil {
+		err = backuputil.ValidateBackup(backup, "")
+	} else {
+		backupNamespace := backup.GetNamespace()
+		if backup.Spec.BR.ClusterNamespace != "" {
+			backupNamespace = backup.Spec.BR.ClusterNamespace
+		}
+
+		var tc *v1alpha1.TidbCluster
+		tc, err = bm.deps.TiDBClusterLister.TidbClusters(backupNamespace).Get(backup.Spec.BR.Cluster)
+		if err != nil {
+			reason := fmt.Sprintf("failed to fetch tidbcluster %s/%s", backupNamespace, backup.Spec.BR.Cluster)
+			bm.statusUpdater.Update(backup, &v1alpha1.BackupCondition{
+				Type:    v1alpha1.BackupRetryFailed,
+				Status:  corev1.ConditionTrue,
+				Reason:  reason,
+				Message: err.Error(),
+			})
+			return err
+		}
+
+		tikvImage := tc.TiKVImage()
+		err = backuputil.ValidateBackup(backup, tikvImage)
+	}
+
 	if err != nil {
 		bm.statusUpdater.Update(backup, &v1alpha1.BackupCondition{
 			Type:    v1alpha1.BackupInvalid,
@@ -74,7 +102,7 @@ func (bm *backupManager) syncBackupJob(backup *v1alpha1.Backup) error {
 			Message: err.Error(),
 		})
 
-		return controller.IgnoreErrorf("invalid backup spec %s/%s", ns, name)
+		return controller.IgnoreErrorf("invalid backup spec %s/%s cause %s", ns, name, err.Error())
 	}
 
 	_, err = bm.deps.JobLister.Jobs(ns).Get(backupJobName)
@@ -261,6 +289,7 @@ func (bm *backupManager) makeExportJob(backup *v1alpha1.Backup) (*batchv1.Job, s
 	return job, "", nil
 }
 
+// makeBackupJob requires that backup.Spec.BR != nil
 func (bm *backupManager) makeBackupJob(backup *v1alpha1.Backup) (*batchv1.Job, string, error) {
 	ns := backup.GetNamespace()
 	name := backup.GetName()
@@ -273,9 +302,15 @@ func (bm *backupManager) makeBackupJob(backup *v1alpha1.Backup) (*batchv1.Job, s
 		return nil, fmt.Sprintf("failed to fetch tidbcluster %s/%s", backupNamespace, backup.Spec.BR.Cluster), err
 	}
 
-	envVars, reason, err := backuputil.GenerateTidbPasswordEnv(ns, name, backup.Spec.From.SecretName, backup.Spec.UseKMS, bm.deps.KubeClientset)
-	if err != nil {
-		return nil, reason, err
+	var (
+		envVars []corev1.EnvVar
+		reason  string
+	)
+	if backup.Spec.From != nil {
+		envVars, reason, err = backuputil.GenerateTidbPasswordEnv(ns, name, backup.Spec.From.SecretName, backup.Spec.UseKMS, bm.deps.KubeClientset)
+		if err != nil {
+			return nil, reason, err
+		}
 	}
 
 	storageEnv, reason, err := backuputil.GenerateStorageCertEnv(ns, backup.Spec.UseKMS, backup.Spec.StorageProvider, bm.deps.KubeClientset)
@@ -303,6 +338,7 @@ func (bm *backupManager) makeBackupJob(backup *v1alpha1.Backup) (*batchv1.Job, s
 	backupLabel := label.NewBackup().Instance(backup.GetInstanceName()).BackupJob().Backup(name)
 	volumeMounts := []corev1.VolumeMount{}
 	volumes := []corev1.Volume{}
+
 	if tc.IsTLSClusterEnabled() {
 		args = append(args, "--cluster-tls=true")
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
@@ -319,10 +355,11 @@ func (bm *backupManager) makeBackupJob(backup *v1alpha1.Backup) (*batchv1.Job, s
 			},
 		})
 	}
+
 	if tc.Spec.TiDB.TLSClient != nil && tc.Spec.TiDB.TLSClient.Enabled && !tc.SkipTLSWhenConnectTiDB() {
 		args = append(args, "--client-tls=true")
 		clientSecretName := util.TiDBClientTLSSecretName(backup.Spec.BR.Cluster)
-		if backup.Spec.From.TLSClientSecretName != nil {
+		if backup.Spec.From != nil && backup.Spec.From.TLSClientSecretName != nil {
 			clientSecretName = *backup.Spec.From.TLSClientSecretName
 		}
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
@@ -340,10 +377,36 @@ func (bm *backupManager) makeBackupJob(backup *v1alpha1.Backup) (*batchv1.Job, s
 		})
 	}
 
+	brVolumeMount := corev1.VolumeMount{
+		Name:      "br-bin",
+		ReadOnly:  false,
+		MountPath: util.BRBinPath,
+	}
+	volumeMounts = append(volumeMounts, brVolumeMount)
+
+	volumes = append(volumes, corev1.Volume{
+		Name: "br-bin",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	})
+
+	// mount volumes if specified
+	if backup.Spec.Local != nil {
+		volumes = append(volumes, backup.Spec.Local.Volume)
+		volumeMounts = append(volumeMounts, backup.Spec.Local.VolumeMount)
+	}
+
 	serviceAccount := constants.DefaultServiceAccountName
 	if backup.Spec.ServiceAccount != "" {
 		serviceAccount = backup.Spec.ServiceAccount
 	}
+
+	brImage := "pingcap/br:" + tikvVersion
+	if backup.Spec.ToolImage != "" {
+		brImage = backup.Spec.ToolImage
+	}
+
 	podSpec := &corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels:      backupLabel.Labels(),
@@ -351,6 +414,17 @@ func (bm *backupManager) makeBackupJob(backup *v1alpha1.Backup) (*batchv1.Job, s
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: serviceAccount,
+			InitContainers: []corev1.Container{
+				{
+					Name:            "br",
+					Image:           brImage,
+					Command:         []string{"/bin/sh", "-c"},
+					Args:            []string{fmt.Sprintf("cp /br %s/br; echo 'BR copy finished'", util.BRBinPath)},
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					VolumeMounts:    []corev1.VolumeMount{brVolumeMount},
+					Resources:       backup.Spec.ResourceRequirements,
+				},
+			},
 			Containers: []corev1.Container{
 				{
 					Name:            label.BackupJobLabelVal,

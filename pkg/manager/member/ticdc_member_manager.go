@@ -56,7 +56,7 @@ func NewTiCDCMemberManager(deps *controller.Dependencies) manager.Manager {
 }
 
 // Sync fulfills the manager.Manager interface
-func (tcmm *ticdcMemberManager) Sync(tc *v1alpha1.TidbCluster) error {
+func (m *ticdcMemberManager) Sync(tc *v1alpha1.TidbCluster) error {
 	ns := tc.GetNamespace()
 	tcName := tc.GetName()
 
@@ -72,18 +72,18 @@ func (tcmm *ticdcMemberManager) Sync(tc *v1alpha1.TidbCluster) error {
 	}
 
 	// Sync CDC Headless Service
-	if err := tcmm.syncCDCHeadlessService(tc); err != nil {
+	if err := m.syncCDCHeadlessService(tc); err != nil {
 		return err
 	}
 
-	return tcmm.syncStatefulSet(tc)
+	return m.syncStatefulSet(tc)
 }
 
-func (tcmm *ticdcMemberManager) syncStatefulSet(tc *v1alpha1.TidbCluster) error {
+func (m *ticdcMemberManager) syncStatefulSet(tc *v1alpha1.TidbCluster) error {
 	ns := tc.GetNamespace()
 	tcName := tc.GetName()
 
-	oldStsTmp, err := tcmm.deps.StatefulSetLister.StatefulSets(ns).Get(controller.TiCDCMemberName(tcName))
+	oldStsTmp, err := m.deps.StatefulSetLister.StatefulSets(ns).Get(controller.TiCDCMemberName(tcName))
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("syncStatefulSet: failed to get sts %s for cluster %s/%s, error: %s", controller.TiCDCMemberName(tcName), ns, tcName, err)
 	}
@@ -92,7 +92,7 @@ func (tcmm *ticdcMemberManager) syncStatefulSet(tc *v1alpha1.TidbCluster) error 
 	oldSts := oldStsTmp.DeepCopy()
 
 	// failed to sync ticdc status will not affect subsequent logic, just print the errors.
-	if err := tcmm.syncTiCDCStatus(tc, oldSts); err != nil {
+	if err := m.syncTiCDCStatus(tc, oldSts); err != nil {
 		klog.Errorf("failed to sync TidbCluster: [%s/%s]'s ticdc status, error: %v",
 			ns, tcName, err)
 	}
@@ -107,7 +107,7 @@ func (tcmm *ticdcMemberManager) syncStatefulSet(tc *v1alpha1.TidbCluster) error 
 		if err != nil {
 			return err
 		}
-		err = tcmm.deps.StatefulSetControl.CreateStatefulSet(tc, newSts)
+		err = m.deps.StatefulSetControl.CreateStatefulSet(tc, newSts)
 		if err != nil {
 			return err
 		}
@@ -119,17 +119,17 @@ func (tcmm *ticdcMemberManager) syncStatefulSet(tc *v1alpha1.TidbCluster) error 
 		return nil
 	}
 
-	return updateStatefulSet(tcmm.deps.StatefulSetControl, tc, newSts, oldSts)
+	return UpdateStatefulSet(m.deps.StatefulSetControl, tc, newSts, oldSts)
 }
 
-func (tcmm *ticdcMemberManager) syncTiCDCStatus(tc *v1alpha1.TidbCluster, sts *apps.StatefulSet) error {
+func (m *ticdcMemberManager) syncTiCDCStatus(tc *v1alpha1.TidbCluster, sts *apps.StatefulSet) error {
 	if sts == nil {
 		// skip if not created yet
 		return nil
 	}
 
 	tc.Status.TiCDC.StatefulSet = &sts.Status
-	upgrading, err := tcmm.statefulSetIsUpgradingFn(tcmm.deps.PodLister, tcmm.deps.PDControl, sts, tc)
+	upgrading, err := m.statefulSetIsUpgradingFn(m.deps.PodLister, m.deps.PDControl, sts, tc)
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,7 @@ func (tcmm *ticdcMemberManager) syncTiCDCStatus(tc *v1alpha1.TidbCluster, sts *a
 	ticdcCaptures := map[string]v1alpha1.TiCDCCapture{}
 	for id := range helper.GetPodOrdinals(tc.Status.TiCDC.StatefulSet.Replicas, sts) {
 		podName := fmt.Sprintf("%s-%d", controller.TiCDCMemberName(tc.GetName()), id)
-		capture, err := tcmm.deps.CDCControl.GetStatus(tc, int32(id))
+		capture, err := m.deps.CDCControl.GetStatus(tc, int32(id))
 		if err != nil {
 			return err
 		}
@@ -157,18 +157,18 @@ func (tcmm *ticdcMemberManager) syncTiCDCStatus(tc *v1alpha1.TidbCluster, sts *a
 	return nil
 }
 
-func (tcmm *ticdcMemberManager) syncCDCHeadlessService(tc *v1alpha1.TidbCluster) error {
+func (m *ticdcMemberManager) syncCDCHeadlessService(tc *v1alpha1.TidbCluster) error {
 	ns := tc.GetNamespace()
 	tcName := tc.GetName()
 
 	newSvc := getNewCDCHeadlessService(tc)
-	oldSvcTmp, err := tcmm.deps.ServiceLister.Services(ns).Get(controller.TiCDCPeerMemberName(tcName))
+	oldSvcTmp, err := m.deps.ServiceLister.Services(ns).Get(controller.TiCDCPeerMemberName(tcName))
 	if errors.IsNotFound(err) {
 		err = controller.SetServiceLastAppliedConfigAnnotation(newSvc)
 		if err != nil {
 			return err
 		}
-		return tcmm.deps.ServiceControl.CreateService(tc, newSvc)
+		return m.deps.ServiceControl.CreateService(tc, newSvc)
 	}
 	if err != nil {
 		return fmt.Errorf("syncCDCHeadlessService: failed to get svc %s for cluster %s/%s, error: %s", controller.TiCDCPeerMemberName(tcName), ns, tcName, err)
@@ -187,7 +187,7 @@ func (tcmm *ticdcMemberManager) syncCDCHeadlessService(tc *v1alpha1.TidbCluster)
 		if err != nil {
 			return err
 		}
-		_, err = tcmm.deps.ServiceControl.UpdateService(tc, &svc)
+		_, err = m.deps.ServiceControl.UpdateService(tc, &svc)
 		return err
 	}
 
@@ -236,7 +236,7 @@ func getNewTiCDCStatefulSet(tc *v1alpha1.TidbCluster) (*apps.StatefulSet, error)
 	stsAnnotations := getStsAnnotations(tc.Annotations, label.TiCDCLabelVal)
 	headlessSvcName := controller.TiCDCPeerMemberName(tcName)
 
-	cmdArgs := []string{"/cdc server", "--addr=0.0.0.0:8301", "--advertise-addr=${POD_NAME}.${HEADLESS_SERVICE_NAME}.${NAMESPACE}.svc:8301"}
+	cmdArgs := []string{"/cdc server", "--addr=0.0.0.0:8301", fmt.Sprintf("--advertise-addr=${POD_NAME}.${HEADLESS_SERVICE_NAME}.${NAMESPACE}.svc%s:8301", controller.FormatClusterDomain(tc.Spec.ClusterDomain))}
 	cmdArgs = append(cmdArgs, fmt.Sprintf("--gc-ttl=%d", tc.TiCDCGCTTL()))
 	cmdArgs = append(cmdArgs, fmt.Sprintf("--log-file=%s", tc.TiCDCLogFile()))
 	cmdArgs = append(cmdArgs, fmt.Sprintf("--log-level=%s", tc.TiCDCLogLevel()))
@@ -357,7 +357,7 @@ func getNewTiCDCStatefulSet(tc *v1alpha1.TidbCluster) (*apps.StatefulSet, error)
 			ServiceName:         headlessSvcName,
 			PodManagementPolicy: apps.ParallelPodManagement,
 			UpdateStrategy: apps.StatefulSetUpdateStrategy{
-				Type: apps.RollingUpdateStatefulSetStrategyType,
+				Type: baseTiCDCSpec.StatefulSetUpdateStrategy(),
 			},
 		},
 	}
@@ -403,13 +403,13 @@ func NewFakeTiCDCMemberManager() *FakeTiCDCMemberManager {
 	return &FakeTiCDCMemberManager{}
 }
 
-func (ftmm *FakeTiCDCMemberManager) SetSyncError(err error) {
-	ftmm.err = err
+func (m *FakeTiCDCMemberManager) SetSyncError(err error) {
+	m.err = err
 }
 
-func (ftmm *FakeTiCDCMemberManager) Sync(tc *v1alpha1.TidbCluster) error {
-	if ftmm.err != nil {
-		return ftmm.err
+func (m *FakeTiCDCMemberManager) Sync(tc *v1alpha1.TidbCluster) error {
+	if m.err != nil {
+		return m.err
 	}
 	return nil
 }

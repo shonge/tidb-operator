@@ -209,7 +209,7 @@ func GetTidbInitializer(ns, tcName, initName, initPassWDName, initTLSName string
 	}
 }
 
-func NewTidbMonitor(name, namespace string, tc *v1alpha1.TidbCluster, grafanaEnabled, persist bool) *v1alpha1.TidbMonitor {
+func NewTidbMonitor(name, namespace string, tc *v1alpha1.TidbCluster, grafanaEnabled, persist bool, isRetain bool) *v1alpha1.TidbMonitor {
 	imagePullPolicy := corev1.PullIfNotPresent
 	monitor := &v1alpha1.TidbMonitor{
 		ObjectMeta: metav1.ObjectMeta{
@@ -258,8 +258,11 @@ func NewTidbMonitor(name, namespace string, tc *v1alpha1.TidbCluster, grafanaEna
 				},
 				Envs: map[string]string{},
 			},
-			Persistent: persist,
 		},
+	}
+	if isRetain {
+		retainPVP := corev1.PersistentVolumeReclaimRetain
+		monitor.Spec.PVReclaimPolicy = &retainPVP
 	}
 	if grafanaEnabled {
 		monitor.Spec.Grafana = &v1alpha1.GrafanaSpec{
@@ -287,6 +290,7 @@ func NewTidbMonitor(name, namespace string, tc *v1alpha1.TidbCluster, grafanaEna
 		storageClassName := "local-storage"
 		monitor.Spec.StorageClassName = &storageClassName
 		monitor.Spec.Storage = "2Gi"
+		monitor.Spec.Persistent = true
 	}
 	return monitor
 }
@@ -420,7 +424,7 @@ func GetBackupCRDWithS3(tc *v1alpha1.TidbCluster, fromSecretName, brType string,
 			StorageProvider: v1alpha1.StorageProvider{
 				S3: s3config,
 			},
-			From: v1alpha1.TiDBAccessConfig{
+			From: &v1alpha1.TiDBAccessConfig{
 				Host:       util.GetTidbServiceName(tc.Name),
 				SecretName: fromSecretName,
 				Port:       4000,
@@ -458,7 +462,7 @@ func GetRestoreCRDWithS3(tc *v1alpha1.TidbCluster, toSecretName, restoreType str
 			StorageProvider: v1alpha1.StorageProvider{
 				S3: s3config,
 			},
-			To: v1alpha1.TiDBAccessConfig{
+			To: &v1alpha1.TiDBAccessConfig{
 				Host:       util.GetTidbServiceName(tc.Name),
 				SecretName: toSecretName,
 				Port:       4000,

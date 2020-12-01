@@ -91,7 +91,7 @@ func DefaultCLIConfig() *CLIConfig {
 		RenewDuration:          5 * time.Second,
 		RetryPeriod:            3 * time.Second,
 		WaitDuration:           5 * time.Second,
-		ResyncDuration:         5 * time.Minute,
+		ResyncDuration:         30 * time.Second,
 		TiDBBackupManagerImage: "pingcap/tidb-backup-manager:latest",
 		TiDBDiscoveryImage:     "pingcap/tidb-operator:latest",
 	}
@@ -304,6 +304,7 @@ func newFakeControl(kubeClientset kubernetes.Interface, informerFactory informer
 	genericCtrl := NewFakeGenericControl()
 	// Shared variables to construct `Dependencies` and some of its fields
 	return Controls{
+		JobControl:         NewFakeJobControl(kubeInformerFactory.Batch().V1().Jobs()),
 		ConfigMapControl:   NewFakeConfigMapControl(kubeInformerFactory.Core().V1().ConfigMaps()),
 		StatefulSetControl: NewFakeStatefulSetControl(kubeInformerFactory.Apps().V1().StatefulSets()),
 		ServiceControl:     NewFakeServiceControl(kubeInformerFactory.Core().V1().Services(), kubeInformerFactory.Core().V1().Endpoints()),
@@ -320,6 +321,16 @@ func newFakeControl(kubeClientset kubernetes.Interface, informerFactory informer
 		TiDBControl:        NewFakeTiDBControl(),
 		BackupControl:      NewFakeBackupControl(informerFactory.Pingcap().V1alpha1().Backups()),
 	}
+}
+
+// NewSimpleClientDependencies returns a dependencies using NewSimpleClientset useful for testing.
+func NewSimpleClientDependencies() *Dependencies {
+	deps := NewFakeDependencies()
+
+	// TODO make all controller use real controller with simple client.
+	deps.BackupControl = NewRealBackupControl(deps.Clientset, deps.Recorder)
+	deps.JobControl = NewRealJobControl(deps.KubeClientset, deps.Recorder)
+	return deps
 }
 
 // NewFakeDependencies returns a fake dependencies for testing

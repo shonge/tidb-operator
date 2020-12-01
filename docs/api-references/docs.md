@@ -215,6 +215,18 @@ DumplingConfig
 </tr>
 <tr>
 <td>
+<code>toolImage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ToolImage specifies the tool image used in the backup/restore, only BR image is supported for now</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>imagePullSecrets</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#localobjectreference-v1-core">
@@ -391,7 +403,9 @@ int32
 </td>
 <td>
 <p>MaxBackups is to specify how many backups we want to keep
-0 is magic number to indicate un-limited backups.</p>
+0 is magic number to indicate un-limited backups.
+if MaxBackups and MaxReservedTime are set at the same time, MaxReservedTime is preferred
+and MaxBackups is ignored.</p>
 </td>
 </tr>
 <tr>
@@ -1010,6 +1024,18 @@ string
 </tr>
 <tr>
 <td>
+<code>toolImage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ToolImage specifies the tool image used in the backup/restore, only BR image is supported for now</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>imagePullSecrets</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#localobjectreference-v1-core">
@@ -1470,6 +1496,19 @@ bool
 </tr>
 <tr>
 <td>
+<code>clusterDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ClusterDomain is the Kubernetes Cluster Domain of TiDB cluster
+Optional: Defaults to &ldquo;&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>cluster</code></br>
 <em>
 <a href="#tidbclusterref">
@@ -1492,6 +1531,20 @@ TidbClusterRef
 <td>
 <em>(Optional)</em>
 <p>PDAddresses are the external PD addresses, if configured, the PDs in this TidbCluster will join to the configured PD cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>statefulSetUpdateStrategy</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#statefulsetupdatestrategytype-v1-apps">
+Kubernetes apps/v1.StatefulSetUpdateStrategyType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StatefulSetUpdateStrategy of TiDB cluster StatefulSets</p>
 </td>
 </tr>
 </table>
@@ -1617,8 +1670,8 @@ TidbAutoScalerSpec
 <td>
 <code>status</code></br>
 <em>
-<a href="#tidbclusterautosclaerstatus">
-TidbClusterAutoSclaerStatus
+<a href="#tidbclusterautoscalerstatus">
+TidbClusterAutoScalerStatus
 </a>
 </em>
 </td>
@@ -2495,7 +2548,8 @@ string
 <h3 id="backupconditiontype">BackupConditionType</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#backupcondition">BackupCondition</a>)
+<a href="#backupcondition">BackupCondition</a>, 
+<a href="#backupstatus">BackupStatus</a>)
 </p>
 <p>
 <p>BackupConditionType represents a valid condition of a Backup.</p>
@@ -2547,7 +2601,9 @@ int32
 </td>
 <td>
 <p>MaxBackups is to specify how many backups we want to keep
-0 is magic number to indicate un-limited backups.</p>
+0 is magic number to indicate un-limited backups.
+if MaxBackups and MaxReservedTime are set at the same time, MaxReservedTime is preferred
+and MaxBackups is ignored.</p>
 </td>
 </tr>
 <tr>
@@ -2819,6 +2875,18 @@ DumplingConfig
 </tr>
 <tr>
 <td>
+<code>toolImage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ToolImage specifies the tool image used in the backup/restore, only BR image is supported for now</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>imagePullSecrets</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#localobjectreference-v1-core">
@@ -2978,6 +3046,19 @@ string
 </td>
 <td>
 <p>CommitTs is the snapshot time point of tidb cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>phase</code></br>
+<em>
+<a href="#backupconditiontype">
+BackupConditionType
+</a>
+</em>
+</td>
+<td>
+<p>Phase is a user readable state inferred from the underlying Backup conditions</p>
 </td>
 </tr>
 <tr>
@@ -3579,8 +3660,20 @@ tidb-operator built envs.
 </td>
 <td>
 <em>(Optional)</em>
-<p>Additional volumes of component pod. Currently this only
-supports additional volume mounts for sidecar containers.</p>
+<p>Additional volumes of component pod.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalVolumeMounts</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#volumemount-v1-core">
+[]Kubernetes core/v1.VolumeMount
+</a>
+</em>
+</td>
+<td>
+<p>Additional volume mounts of component pod.</p>
 </td>
 </tr>
 <tr>
@@ -3599,6 +3692,22 @@ The grace period is the duration in seconds after the processes running in the p
 a termination signal and the time when the processes are forcibly halted with a kill signal.
 Set this value longer than the expected cleanup time for your process.
 Defaults to 30 seconds.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>statefulSetUpdateStrategy</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#statefulsetupdatestrategytype-v1-apps">
+Kubernetes apps/v1.StatefulSetUpdateStrategyType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StatefulSetUpdateStrategy indicates the StatefulSetUpdateStrategy that will be
+employed to update Pods in the StatefulSet when a revision is made to
+Template.</p>
 </td>
 </tr>
 </tbody>
@@ -4539,6 +4648,35 @@ bool
 These features are incomplete or not well tested. Suggest not to enable in
 production.
 Optional: Defaults to false</p>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="deploymentstoragestatus">DeploymentStorageStatus</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#tidbmonitorstatus">TidbMonitorStatus</a>)
+</p>
+<p>
+<p>DeploymentStorageStatus is the storage information of the deployment</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>pvName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>PV name</p>
 </td>
 </tr>
 </tbody>
@@ -5767,6 +5905,58 @@ int32
 <em>(Optional)</em>
 <p>Engines filters tidb-server access paths by engine type.
 imported from v3.1.0</p>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="localstorageprovider">LocalStorageProvider</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#storageprovider">StorageProvider</a>)
+</p>
+<p>
+<p>LocalStorageProvider defines local storage options, which can be any k8s supported mounted volume</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>volume</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#volume-v1-core">
+Kubernetes core/v1.Volume
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>volumeMount</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#volumemount-v1-core">
+Kubernetes core/v1.VolumeMount
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>prefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
 </td>
 </tr>
 </tbody>
@@ -8600,6 +8790,21 @@ bool
 <p>MountClusterClientSecret indicates whether to mount <code>cluster-client-secret</code> to the Pod</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>storageVolumes</code></br>
+<em>
+<a href="#storagevolume">
+[]StorageVolume
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageVolumes is additional storage apply for PD node.
+Default to storageClassName storage class</p>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="pdstatus">PDStatus</h3>
@@ -8655,6 +8860,18 @@ Kubernetes apps/v1.StatefulSetStatus
 <tr>
 <td>
 <code>members</code></br>
+<em>
+<a href="#pdmember">
+map[string]github.com/pingcap/tidb-operator/pkg/apis/pingcap/v1alpha1.PDMember
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>peerMembers</code></br>
 <em>
 <a href="#pdmember">
 map[string]github.com/pingcap/tidb-operator/pkg/apis/pingcap/v1alpha1.PDMember
@@ -9910,7 +10127,8 @@ string
 <h3 id="restoreconditiontype">RestoreConditionType</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#restorecondition">RestoreCondition</a>)
+<a href="#restorecondition">RestoreCondition</a>, 
+<a href="#restorestatus">RestoreStatus</a>)
 </p>
 <p>
 <p>RestoreConditionType represents a valid condition of a Restore.</p>
@@ -10087,6 +10305,18 @@ string
 </tr>
 <tr>
 <td>
+<code>toolImage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ToolImage specifies the tool image used in the backup/restore, only BR image is supported for now</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>imagePullSecrets</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#localobjectreference-v1-core">
@@ -10163,6 +10393,19 @@ string
 </td>
 <td>
 <p>CommitTs is the snapshot time point of tidb cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>phase</code></br>
+<em>
+<a href="#restoreconditiontype">
+RestoreConditionType
+</a>
+</em>
+</td>
+<td>
+<p>Phase is a user readable state inferred from the underlying Restore conditions</p>
 </td>
 </tr>
 <tr>
@@ -10525,6 +10768,7 @@ string
 <a href="#tidbservicespec">TiDBServiceSpec</a>)
 </p>
 <p>
+<p>ServiceSpec specifies the service object in k8s</p>
 </p>
 <table>
 <thead>
@@ -10854,6 +11098,78 @@ S3StorageProvider
 <a href="#gcsstorageprovider">
 GcsStorageProvider
 </a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>local</code></br>
+<em>
+<a href="#localstorageprovider">
+LocalStorageProvider
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="storagevolume">StorageVolume</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#pdspec">PDSpec</a>, 
+<a href="#tidbspec">TiDBSpec</a>, 
+<a href="#tikvspec">TiKVSpec</a>)
+</p>
+<p>
+<p>StorageVolume is TiKV storage information</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageSize</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>mountPath</code></br>
+<em>
+string
 </em>
 </td>
 <td>
@@ -11954,6 +12270,40 @@ string
 </tr>
 </tbody>
 </table>
+<h3 id="tidbprobe">TiDBProbe</h3>
+<p>
+(<em>Appears on:</em>
+<a href="#tidbspec">TiDBSpec</a>)
+</p>
+<p>
+<p>TiDBProbe contains details of probing tidb.
+default probe by TCPPort on 4000.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>&ldquo;tcp&rdquo; will use TCP socket to connetct port 4000</p>
+<p>&ldquo;command&rdquo; will probe the status api of tidb.
+This will use curl command to request tidb, before v4.0.9 there is no curl in the image,
+So do not use this before v4.0.9.</p>
+</td>
+</tr>
+</tbody>
+</table>
 <h3 id="tidbservicespec">TiDBServiceSpec</h3>
 <p>
 (<em>Appears on:</em>
@@ -12300,6 +12650,49 @@ Kubernetes core/v1.Lifecycle
 <p>Lifecycle describes actions that the management system should take in response to container lifecycle
 events. For the PostStart and PreStop lifecycle handlers, management of the container blocks
 until the action is complete, unless the container process fails, in which case the handler is aborted.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageVolumes</code></br>
+<em>
+<a href="#storagevolume">
+[]StorageVolume
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageVolumes is additional storage apply for TiDB node.
+Default to storageClassName storage class</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>The storageClassName of the persistent volume for TiDB data storage.
+Defaults to Kubernetes default storage class.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>readinessProbe</code></br>
+<em>
+<a href="#tidbprobe">
+TiDBProbe
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ReadinessProbe describes actions that probe the tidb&rsquo;s readiness.
+the default behavior is like setting type as &ldquo;tcp&rdquo;</p>
 </td>
 </tr>
 </tbody>
@@ -16688,6 +17081,21 @@ string
 Defaults to 3m</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>storageVolumes</code></br>
+<em>
+<a href="#storagevolume">
+[]StorageVolume
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageVolumes is additional storage apply for TiKV node.
+Default to storageClassName storage class</p>
+</td>
+</tr>
 </tbody>
 </table>
 <h3 id="tikvstatus">TiKVStatus</h3>
@@ -16743,6 +17151,18 @@ Kubernetes apps/v1.StatefulSetStatus
 <tr>
 <td>
 <code>stores</code></br>
+<em>
+<a href="#tikvstore">
+map[string]github.com/pingcap/tidb-operator/pkg/apis/pingcap/v1alpha1.TiKVStore
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>peerStores</code></br>
 <em>
 <a href="#tikvstore">
 map[string]github.com/pingcap/tidb-operator/pkg/apis/pingcap/v1alpha1.TiKVStore
@@ -17413,7 +17833,7 @@ BasicAutoScalerSpec
 <h3 id="tidbautoscalerstatus">TidbAutoScalerStatus</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#tidbclusterautosclaerstatus">TidbClusterAutoSclaerStatus</a>)
+<a href="#tidbclusterautoscalerstatus">TidbClusterAutoScalerStatus</a>)
 </p>
 <p>
 <p>TidbAutoScalerStatus describe the auto-scaling status of tidb</p>
@@ -17540,13 +17960,13 @@ TidbAutoScalerSpec
 </tr>
 </tbody>
 </table>
-<h3 id="tidbclusterautosclaerstatus">TidbClusterAutoSclaerStatus</h3>
+<h3 id="tidbclusterautoscalerstatus">TidbClusterAutoScalerStatus</h3>
 <p>
 (<em>Appears on:</em>
 <a href="#tidbclusterautoscaler">TidbClusterAutoScaler</a>)
 </p>
 <p>
-<p>TidbClusterAutoSclaerStatus describe the whole status</p>
+<p>TidbClusterAutoScalerStatus describe the whole status</p>
 </p>
 <table>
 <thead>
@@ -17561,13 +17981,13 @@ TidbAutoScalerSpec
 <code>tikv</code></br>
 <em>
 <a href="#tikvautoscalerstatus">
-TikvAutoScalerStatus
+map[string]github.com/pingcap/tidb-operator/pkg/apis/pingcap/v1alpha1.TikvAutoScalerStatus
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tikv describes the status for the tikv in the last auto-scaling reconciliation</p>
+<p>Tikv describes the status of each group for the tikv in the last auto-scaling reconciliation</p>
 </td>
 </tr>
 <tr>
@@ -17575,13 +17995,13 @@ TikvAutoScalerStatus
 <code>tidb</code></br>
 <em>
 <a href="#tidbautoscalerstatus">
-TidbAutoScalerStatus
+map[string]github.com/pingcap/tidb-operator/pkg/apis/pingcap/v1alpha1.TidbAutoScalerStatus
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tidb describes the status for the tidb in the last auto-scaling reconciliation</p>
+<p>Tidb describes the status of each group for the tidb in the last auto-scaling reconciliation</p>
 </td>
 </tr>
 </tbody>
@@ -17730,6 +18150,18 @@ string
 </td>
 <td>
 <p>Name is the name of TidbCluster object</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ClusterDomain is the domain of TidbCluster object</p>
 </td>
 </tr>
 </tbody>
@@ -18113,6 +18545,19 @@ bool
 </tr>
 <tr>
 <td>
+<code>clusterDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ClusterDomain is the Kubernetes Cluster Domain of TiDB cluster
+Optional: Defaults to &ldquo;&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>cluster</code></br>
 <em>
 <a href="#tidbclusterref">
@@ -18135,6 +18580,20 @@ TidbClusterRef
 <td>
 <em>(Optional)</em>
 <p>PDAddresses are the external PD addresses, if configured, the PDs in this TidbCluster will join to the configured PD cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>statefulSetUpdateStrategy</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#statefulsetupdatestrategytype-v1-apps">
+Kubernetes apps/v1.StatefulSetUpdateStrategyType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StatefulSetUpdateStrategy of TiDB cluster StatefulSets</p>
 </td>
 </tr>
 </tbody>
@@ -18783,8 +19242,30 @@ bool
 <a href="#tidbmonitor">TidbMonitor</a>)
 </p>
 <p>
-<p>TODO: sync status</p>
 </p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>deploymentStorageStatus</code></br>
+<em>
+<a href="#deploymentstoragestatus">
+DeploymentStorageStatus
+</a>
+</em>
+</td>
+<td>
+<p>Storage status for deployment</p>
+</td>
+</tr>
+</tbody>
+</table>
 <h3 id="tikvautoscalerspec">TikvAutoScalerSpec</h3>
 <p>
 (<em>Appears on:</em>
@@ -18821,7 +19302,7 @@ BasicAutoScalerSpec
 <h3 id="tikvautoscalerstatus">TikvAutoScalerStatus</h3>
 <p>
 (<em>Appears on:</em>
-<a href="#tidbclusterautosclaerstatus">TidbClusterAutoSclaerStatus</a>)
+<a href="#tidbclusterautoscalerstatus">TidbClusterAutoScalerStatus</a>)
 </p>
 <p>
 <p>TikvAutoScalerStatus describe the auto-scaling status of tikv</p>

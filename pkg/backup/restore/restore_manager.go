@@ -53,7 +53,32 @@ func (rm *restoreManager) syncRestoreJob(restore *v1alpha1.Restore) error {
 	name := restore.GetName()
 	restoreJobName := restore.GetRestoreJobName()
 
-	err := backuputil.ValidateRestore(restore)
+	var err error
+	if restore.Spec.BR == nil {
+		err = backuputil.ValidateRestore(restore, "")
+	} else {
+		restoreNamespace := restore.GetNamespace()
+		if restore.Spec.BR.ClusterNamespace != "" {
+			restoreNamespace = restore.Spec.BR.ClusterNamespace
+		}
+
+		var tc *v1alpha1.TidbCluster
+		tc, err = rm.deps.TiDBClusterLister.TidbClusters(restoreNamespace).Get(restore.Spec.BR.Cluster)
+		if err != nil {
+			reason := fmt.Sprintf("failed to fetch tidbcluster %s/%s", restoreNamespace, restore.Spec.BR.Cluster)
+			rm.statusUpdater.Update(restore, &v1alpha1.RestoreCondition{
+				Type:    v1alpha1.RestoreRetryFailed,
+				Status:  corev1.ConditionTrue,
+				Reason:  reason,
+				Message: err.Error(),
+			})
+			return err
+		}
+
+		tikvImage := tc.TiKVImage()
+		err = backuputil.ValidateRestore(restore, tikvImage)
+	}
+
 	if err != nil {
 		rm.statusUpdater.Update(restore, &v1alpha1.RestoreCondition{
 			Type:    v1alpha1.RestoreInvalid,
@@ -254,9 +279,15 @@ func (rm *restoreManager) makeRestoreJob(restore *v1alpha1.Restore) (*batchv1.Jo
 		return nil, fmt.Sprintf("failed to fetch tidbcluster %s/%s", restoreNamespace, restore.Spec.BR.Cluster), err
 	}
 
-	envVars, reason, err := backuputil.GenerateTidbPasswordEnv(ns, name, restore.Spec.To.SecretName, restore.Spec.UseKMS, rm.deps.KubeClientset)
-	if err != nil {
-		return nil, reason, err
+	var (
+		envVars []corev1.EnvVar
+		reason  string
+	)
+	if restore.Spec.To != nil {
+		envVars, reason, err = backuputil.GenerateTidbPasswordEnv(ns, name, restore.Spec.To.SecretName, restore.Spec.UseKMS, rm.deps.KubeClientset)
+		if err != nil {
+			return nil, reason, err
+		}
 	}
 
 	storageEnv, reason, err := backuputil.GenerateStorageCertEnv(ns, restore.Spec.UseKMS, restore.Spec.StorageProvider, rm.deps.KubeClientset)
@@ -321,10 +352,36 @@ func (rm *restoreManager) makeRestoreJob(restore *v1alpha1.Restore) (*batchv1.Jo
 		})
 	}
 
+	brVolumeMount := corev1.VolumeMount{
+		Name:      "br-bin",
+		ReadOnly:  false,
+		MountPath: util.BRBinPath,
+	}
+	volumeMounts = append(volumeMounts, brVolumeMount)
+
+	volumes = append(volumes, corev1.Volume{
+		Name: "br-bin",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	})
+
+	// mount volumes if specified
+	if restore.Spec.Local != nil {
+		volumes = append(volumes, restore.Spec.Local.Volume)
+		volumeMounts = append(volumeMounts, restore.Spec.Local.VolumeMount)
+	}
+
 	serviceAccount := constants.DefaultServiceAccountName
 	if restore.Spec.ServiceAccount != "" {
 		serviceAccount = restore.Spec.ServiceAccount
 	}
+
+	brImage := "pingcap/br:" + tikvVersion
+	if restore.Spec.ToolImage != "" {
+		brImage = restore.Spec.ToolImage
+	}
+
 	// TODO: need add ResourceRequirement for restore job
 	podSpec := &corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
@@ -333,6 +390,17 @@ func (rm *restoreManager) makeRestoreJob(restore *v1alpha1.Restore) (*batchv1.Jo
 		},
 		Spec: corev1.PodSpec{
 			ServiceAccountName: serviceAccount,
+			InitContainers: []corev1.Container{
+				{
+					Name:            "br",
+					Image:           brImage,
+					Command:         []string{"/bin/sh", "-c"},
+					Args:            []string{fmt.Sprintf("cp /br %s/br; echo 'BR copy finished'", util.BRBinPath)},
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					VolumeMounts:    []corev1.VolumeMount{brVolumeMount},
+					Resources:       restore.Spec.ResourceRequirements,
+				},
+			},
 			Containers: []corev1.Container{
 				{
 					Name:            label.RestoreJobLabelVal,
