@@ -604,6 +604,10 @@ type TiDBSpec struct {
 	// +optional
 	SeparateSlowLog *bool `json:"separateSlowLog,omitempty"`
 
+	// Optional volume name configuration for slow query log.
+	// +optional
+	SlowLogVolumeName string `json:"slowLogVolumeName,omitempty"`
+
 	// The specification of the slow log tailer sidecar
 	// +optional
 	SlowLogTailer *TiDBSlowLogTailerSpec `json:"slowLogTailer,omitempty"`
@@ -808,6 +812,10 @@ type ComponentSpec struct {
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
 
+	// Init containers of the components
+	// +optional
+	InitContainers []corev1.Container `json:"initContainers,omitempty"`
+
 	// Additional containers of the component.
 	// +optional
 	AdditionalContainers []corev1.Container `json:"additionalContainers,omitempty"`
@@ -979,6 +987,7 @@ type TiDBFailureMember struct {
 type TiKVStatus struct {
 	Synced          bool                        `json:"synced,omitempty"`
 	Phase           MemberPhase                 `json:"phase,omitempty"`
+	BootStrapped    bool                        `json:"bootStrapped,omitempty"`
 	StatefulSet     *apps.StatefulSetStatus     `json:"statefulSet,omitempty"`
 	Stores          map[string]TiKVStore        `json:"stores,omitempty"`
 	PeerStores      map[string]TiKVStore        `json:"peerStores,omitempty"`

@@ -143,6 +143,8 @@ type MonitorConfigModel struct {
 	DMClusterInfos     []ClusterRegexInfo
 	EnableTLSCluster   bool
 	EnableTLSDMCluster bool
+	ExternalLabels     model.LabelSet
+	RemoteWriteConfigs []*config.RemoteWriteConfig
 }
 
 // ClusterRegexInfo is the monitor cluster info
@@ -169,11 +171,13 @@ func newPrometheusConfig(cmodel *MonitorConfigModel) *config.Config {
 		GlobalConfig: config.GlobalConfig{
 			ScrapeInterval:     model.Duration(15 * time.Second),
 			EvaluationInterval: model.Duration(15 * time.Second),
+			ExternalLabels:     cmodel.ExternalLabels,
 		},
 		RuleFiles: []string{
 			"/prometheus-rules/rules/*.rules.yml",
 		},
-		ScrapeConfigs: scrapeJobs,
+		ScrapeConfigs:      scrapeJobs,
+		RemoteWriteConfigs: cmodel.RemoteWriteConfigs,
 	}
 	return &c
 }
@@ -348,13 +352,6 @@ func scrapeJob(jobName string, componentPattern config.Regexp, cmodel *MonitorCo
 				},
 				{
 					SourceLabels: model.LabelNames{
-						componentLabel,
-					},
-					Action: config.RelabelKeep,
-					Regex:  componentPattern,
-				},
-				{
-					SourceLabels: model.LabelNames{
 						scrapeLabel,
 					},
 					Action: config.RelabelKeep,
@@ -362,11 +359,10 @@ func scrapeJob(jobName string, componentPattern config.Regexp, cmodel *MonitorCo
 				},
 				{
 					SourceLabels: model.LabelNames{
-						metricsPathLabel,
+						componentLabel,
 					},
-					Action:      config.RelabelReplace,
-					TargetLabel: "__metrics_path__",
-					Regex:       allMatchPattern,
+					Action: config.RelabelKeep,
+					Regex:  componentPattern,
 				},
 				addressRelabelConfig,
 				{
@@ -396,6 +392,22 @@ func scrapeJob(jobName string, componentPattern config.Regexp, cmodel *MonitorCo
 					},
 					Action:      config.RelabelReplace,
 					TargetLabel: "component",
+				},
+				{
+					SourceLabels: model.LabelNames{
+						namespaceLabel,
+						instanceLabel,
+					},
+					Separator:   "-",
+					TargetLabel: "tidb_cluster",
+				},
+				{
+					SourceLabels: model.LabelNames{
+						metricsPathLabel,
+					},
+					Action:      config.RelabelReplace,
+					TargetLabel: "__metrics_path__",
+					Regex:       allMatchPattern,
 				},
 			},
 		}

@@ -18,7 +18,7 @@ import (
 	"os"
 	"strconv"
 
-	"k8s.io/klog"
+	"k8s.io/kubernetes/test/e2e/framework/log"
 )
 
 func (tc *TidbClusterConfig) set(name string, value string) (string, bool) {
@@ -46,7 +46,7 @@ func (tc *TidbClusterConfig) ScaleTiDB(replicas uint) *TidbClusterConfig {
 	return tc
 }
 
-func (tc *TidbClusterConfig) RunInHost(flag bool) *TidbClusterConfig {
+func (tc *TidbClusterConfig) SetHostNetwork(flag bool) *TidbClusterConfig {
 	val := "false"
 	if flag {
 		val = "true"
@@ -161,6 +161,6 @@ func (tc *TidbClusterConfig) BuildSubValues(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	klog.V(4).Infof("subValues:\n %s", subValues)
+	log.Logf("subValues:\n %s", subValues)
 	return subVaulesPath, nil
 }

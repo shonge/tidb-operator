@@ -45,6 +45,10 @@ GINKGO_PARALLEL=${GINKGO_PARALLEL:-n} # set to 'y' to run tests in parallel
 # in parallel
 GINKGO_NO_COLOR=${GINKGO_NO_COLOR:-n}
 GINKGO_STREAM=${GINKGO_STREAM:-y}
+GINKGO_PROGRESS=${GINKGO_PROGRESS:-y}
+GINKGO_TRACE=${GINKGO_TRACE:-y}
+GINKGO_FLAKY_ATTEMPTS=${GINKGO_FLAKY_ATTEMPTS:-2}
+GINKGO_UNTILITFAILS=${GINKGO_UNTILITFAILS:-}
 SKIP_GINKGO=${SKIP_GINKGO:-}
 # We don't delete namespace on failure by default for easier debugging in local development.
 DELETE_NAMESPACE_ON_FAILURE=${DELETE_NAMESPACE_ON_FAILURE:-false}
@@ -66,6 +70,10 @@ echo "GINKGO_NODES: $GINKGO_NODES"
 echo "GINKGO_PARALLEL: $GINKGO_PARALLEL"
 echo "GINKGO_NO_COLOR: $GINKGO_NO_COLOR"
 echo "GINKGO_STREAM: $GINKGO_STREAM"
+echo "GINKGO_PROGRESS: $GINKGO_PROGRESS"
+echo "GINKGO_TRACE: $GINKGO_TRACE"
+echo "GINKGO_FLAKY_ATTEMPTS: $GINKGO_FLAKY_ATTEMPTS"
+echo "GINKGO_UNTILITFAILS: $GINKGO_UNTILITFAILS"
 echo "DELETE_NAMESPACE_ON_FAILURE: $DELETE_NAMESPACE_ON_FAILURE"
 
 function e2e::__wait_for_ds() {
@@ -80,7 +88,7 @@ function e2e::__wait_for_ds() {
             return 0
         fi
         echo "info: pods of daemonset $ns/$name (desired: $a, ready: $b)"
-        sleep 1
+        sleep 5
     }
     echo "info: timed out waiting for pods of daemonset $ns/$name are ready"
     return 1
@@ -98,7 +106,7 @@ function e2e::__wait_for_deploy() {
             return 0
         fi
         echo "info: pods of deployment $ns/$name (desired: $a, ready: $b)"
-        sleep 1
+        sleep 5
     }
     echo "info: timed out waiting for pods of deployment $ns/$name are ready"
     return 1
@@ -167,24 +175,6 @@ function e2e::__ecr_url() {
 
 function e2e::get_kube_version() {
     $KUBECTL_BIN --context $KUBECONTEXT version --short | awk '/Server Version:/ {print $3}'
-}
-
-function e2e::setup_helm_server() {
-    $KUBECTL_BIN --context $KUBECONTEXT apply -f ${ROOT}/manifests/tiller-rbac.yaml
-    if hack::version_ge $(e2e::get_kube_version) "v1.16.0"; then
-        # workaround for https://github.com/helm/helm/issues/6374
-        # TODO remove this when we can upgrade to helm 2.15+, see https://github.com/helm/helm/pull/6462
-        # \'$'\n is used to be compatible with BSD sed (Darwin)
-        $HELM_BIN init --service-account tiller --output yaml \
-            | sed 's@apiVersion: extensions/v1beta1@apiVersion: apps/v1@' \
-            | sed 's@  replicas: 1@  replicas: 1\'$'\n  selector: {"matchLabels": {"app": "helm", "name": "tiller"}}@' \
-            | $KUBECTL_BIN --context $KUBECONTEXT apply -f -
-        echo "info: wait for tiller to be ready"
-        e2e::__wait_for_deploy kube-system tiller-deploy
-    else
-        $HELM_BIN init --service-account=tiller --skip-refresh --wait
-    fi
-    $HELM_BIN version
 }
 
 # Used by non-kind providers to tag image with its id. This can force our e2e
@@ -300,7 +290,6 @@ if [ -z "$SKIP_IMAGE_LOAD" ]; then
 fi
 
 e2e::setup_local_pvs
-e2e::setup_helm_server
 
 if [ -n "$SKIP_GINKGO" ]; then
     echo "info: skipping ginkgo"
@@ -325,7 +314,23 @@ if [[ "${GINKGO_STREAM}" == "y" ]]; then
     ginkgo_args+=("--stream")
 fi
 
-e2e_args=(
+if [[ "${GINKGO_PROGRESS}" == "y" ]]; then
+    ginkgo_args+=("--progress")
+fi
+
+if [[ "${GINKGO_TRACE}" == "y" ]]; then
+    ginkgo_args+=("--trace")
+fi
+
+if [[ -n "${GINKGO_FLAKY_ATTEMPTS:-}" ]]; then
+    ginkgo_args+=("--flakeAttempts=${GINKGO_FLAKY_ATTEMPTS}")
+fi
+
+if [[ -n "${GINKGO_UNTILITFAILS:-}" ]]; then
+    ginkgo_args+=("--untilItFails")
+fi
+
+tester_args=(
     /usr/local/bin/ginkgo
     ${ginkgo_args[@]:-}
     /usr/local/bin/e2e.test
@@ -342,7 +347,8 @@ e2e_args=(
     -v=4
 )
 
-e2e_args+=(${@:-})
+# append any args passed to kubetest2 as tester args after -- in the parent script
+tester_args+=(${@:-})
 
 docker_args=(
     run
@@ -359,7 +365,7 @@ docker_args=(
 )
 
 if [ "$PROVIDER" == "eks" ]; then
-    e2e_args+=(
+    tester_args+=(
         --provider=aws
         --gce-zone="${AWS_ZONE}" # reuse gce-zone to configure aws zone
     )
@@ -370,7 +376,7 @@ if [ "$PROVIDER" == "eks" ]; then
         -v $HOME/.ssh/kube_aws_rsa:/root/.ssh/kube_aws_rsa
     )
 elif [ "$PROVIDER" == "gke" ]; then
-    e2e_args+=(
+    tester_args+=(
         --provider="${PROVIDER}"
         --gce-project="${GCP_PROJECT}"
         --gce-region="${GCP_REGION}"
@@ -395,13 +401,13 @@ elif [ "$PROVIDER" == "gke" ]; then
         -v $HOME/.ssh/google_compute_engine:/root/.ssh/google_compute_engine
     )
 else
-    e2e_args+=(
+    tester_args+=(
         --provider="${PROVIDER}"
     )
 fi
 
 if [ -n "$REPORT_DIR" ]; then
-    e2e_args+=(
+    tester_args+=(
         --report-dir="${REPORT_DIR}"
         --report-prefix="${REPORT_PREFIX}"
     )
@@ -410,5 +416,5 @@ if [ -n "$REPORT_DIR" ]; then
     )
 fi
 
-echo "info: docker ${docker_args[@]} $E2E_IMAGE ${e2e_args[@]}"
-docker ${docker_args[@]} $E2E_IMAGE ${e2e_args[@]}
+echo "info: docker ${docker_args[@]} $E2E_IMAGE ${tester_args[@]}"
+docker ${docker_args[@]} $E2E_IMAGE ${tester_args[@]}

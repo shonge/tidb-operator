@@ -48,6 +48,10 @@ func (rm *restoreManager) Sync(restore *v1alpha1.Restore) error {
 	return rm.syncRestoreJob(restore)
 }
 
+func (rm *restoreManager) UpdateCondition(restore *v1alpha1.Restore, condition *v1alpha1.RestoreCondition) error {
+	return rm.statusUpdater.Update(restore, condition, nil)
+}
+
 func (rm *restoreManager) syncRestoreJob(restore *v1alpha1.Restore) error {
 	ns := restore.GetNamespace()
 	name := restore.GetName()
@@ -71,7 +75,7 @@ func (rm *restoreManager) syncRestoreJob(restore *v1alpha1.Restore) error {
 				Status:  corev1.ConditionTrue,
 				Reason:  reason,
 				Message: err.Error(),
-			})
+			}, nil)
 			return err
 		}
 
@@ -85,7 +89,7 @@ func (rm *restoreManager) syncRestoreJob(restore *v1alpha1.Restore) error {
 			Status:  corev1.ConditionTrue,
 			Reason:  "InvalidSpec",
 			Message: err.Error(),
-		})
+		}, nil)
 
 		return controller.IgnoreErrorf("invalid restore spec %s/%s", ns, name)
 	}
@@ -112,7 +116,7 @@ func (rm *restoreManager) syncRestoreJob(restore *v1alpha1.Restore) error {
 				Status:  corev1.ConditionTrue,
 				Reason:  reason,
 				Message: err.Error(),
-			})
+			}, nil)
 			return err
 		}
 
@@ -123,7 +127,7 @@ func (rm *restoreManager) syncRestoreJob(restore *v1alpha1.Restore) error {
 				Status:  corev1.ConditionTrue,
 				Reason:  reason,
 				Message: err.Error(),
-			})
+			}, nil)
 			return err
 		}
 	} else {
@@ -134,7 +138,7 @@ func (rm *restoreManager) syncRestoreJob(restore *v1alpha1.Restore) error {
 				Status:  corev1.ConditionTrue,
 				Reason:  reason,
 				Message: err.Error(),
-			})
+			}, nil)
 			return err
 		}
 	}
@@ -146,14 +150,14 @@ func (rm *restoreManager) syncRestoreJob(restore *v1alpha1.Restore) error {
 			Status:  corev1.ConditionTrue,
 			Reason:  "CreateRestoreJobFailed",
 			Message: errMsg.Error(),
-		})
+		}, nil)
 		return errMsg
 	}
 
 	return rm.statusUpdater.Update(restore, &v1alpha1.RestoreCondition{
 		Type:   v1alpha1.RestoreScheduled,
 		Status: corev1.ConditionTrue,
-	})
+	}, nil)
 }
 
 func (rm *restoreManager) makeImportJob(restore *v1alpha1.Restore) (*batchv1.Job, string, error) {
@@ -229,7 +233,7 @@ func (rm *restoreManager) makeImportJob(restore *v1alpha1.Restore) (*batchv1.Job
 		})
 	}
 
-	restoreLabel := label.NewBackup().Instance(restore.GetInstanceName()).RestoreJob().Restore(name)
+	restoreLabel := label.NewRestore().Instance(restore.GetInstanceName()).RestoreJob().Restore(name)
 	serviceAccount := constants.DefaultServiceAccountName
 	if restore.Spec.ServiceAccount != "" {
 		serviceAccount = restore.Spec.ServiceAccount
@@ -338,7 +342,7 @@ func (rm *restoreManager) makeRestoreJob(restore *v1alpha1.Restore) (*batchv1.Jo
 		args = append(args, fmt.Sprintf("--tikvVersion=%s", tikvVersion))
 	}
 
-	restoreLabel := label.NewBackup().Instance(restore.GetInstanceName()).RestoreJob().Restore(name)
+	restoreLabel := label.NewRestore().Instance(restore.GetInstanceName()).RestoreJob().Restore(name)
 	volumeMounts := []corev1.VolumeMount{}
 	volumes := []corev1.Volume{}
 	if tc.IsTLSClusterEnabled() {
@@ -358,7 +362,7 @@ func (rm *restoreManager) makeRestoreJob(restore *v1alpha1.Restore) (*batchv1.Jo
 		})
 	}
 
-	if tc.Spec.TiDB.TLSClient != nil && tc.Spec.TiDB.TLSClient.Enabled && !tc.SkipTLSWhenConnectTiDB() {
+	if restore.Spec.To != nil && tc.Spec.TiDB.TLSClient != nil && tc.Spec.TiDB.TLSClient.Enabled && !tc.SkipTLSWhenConnectTiDB() {
 		args = append(args, "--client-tls=true")
 		clientSecretName := util.TiDBClientTLSSecretName(restore.Spec.BR.Cluster)
 		if restore.Spec.To.TLSClientSecretName != nil {
@@ -528,6 +532,10 @@ func (frm *FakeRestoreManager) SetSyncError(err error) {
 
 func (frm *FakeRestoreManager) Sync(_ *v1alpha1.Restore) error {
 	return frm.err
+}
+
+func (frm *FakeRestoreManager) UpdateCondition(_ *v1alpha1.Restore, _ *v1alpha1.RestoreCondition) error {
+	return nil
 }
 
 var _ backup.RestoreManager = &FakeRestoreManager{}

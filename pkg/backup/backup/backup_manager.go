@@ -63,6 +63,10 @@ func (bm *backupManager) Sync(backup *v1alpha1.Backup) error {
 	return bm.syncBackupJob(backup)
 }
 
+func (bm *backupManager) UpdateCondition(backup *v1alpha1.Backup, condition *v1alpha1.BackupCondition) error {
+	return bm.statusUpdater.Update(backup, condition, nil)
+}
+
 func (bm *backupManager) syncBackupJob(backup *v1alpha1.Backup) error {
 	ns := backup.GetNamespace()
 	name := backup.GetName()
@@ -86,7 +90,7 @@ func (bm *backupManager) syncBackupJob(backup *v1alpha1.Backup) error {
 				Status:  corev1.ConditionTrue,
 				Reason:  reason,
 				Message: err.Error(),
-			})
+			}, nil)
 			return err
 		}
 
@@ -100,7 +104,7 @@ func (bm *backupManager) syncBackupJob(backup *v1alpha1.Backup) error {
 			Status:  corev1.ConditionTrue,
 			Reason:  "InvalidSpec",
 			Message: err.Error(),
-		})
+		}, nil)
 
 		return controller.IgnoreErrorf("invalid backup spec %s/%s cause %s", ns, name, err.Error())
 	}
@@ -126,7 +130,7 @@ func (bm *backupManager) syncBackupJob(backup *v1alpha1.Backup) error {
 				Status:  corev1.ConditionTrue,
 				Reason:  reason,
 				Message: err.Error(),
-			})
+			}, nil)
 			return err
 		}
 
@@ -137,7 +141,7 @@ func (bm *backupManager) syncBackupJob(backup *v1alpha1.Backup) error {
 				Status:  corev1.ConditionTrue,
 				Reason:  reason,
 				Message: err.Error(),
-			})
+			}, nil)
 			return err
 		}
 
@@ -150,7 +154,7 @@ func (bm *backupManager) syncBackupJob(backup *v1alpha1.Backup) error {
 				Status:  corev1.ConditionTrue,
 				Reason:  reason,
 				Message: err.Error(),
-			})
+			}, nil)
 			return err
 		}
 	}
@@ -162,14 +166,14 @@ func (bm *backupManager) syncBackupJob(backup *v1alpha1.Backup) error {
 			Status:  corev1.ConditionTrue,
 			Reason:  "CreateBackupJobFailed",
 			Message: errMsg.Error(),
-		})
+		}, nil)
 		return errMsg
 	}
 
 	return bm.statusUpdater.Update(backup, &v1alpha1.BackupCondition{
 		Type:   v1alpha1.BackupScheduled,
 		Status: corev1.ConditionTrue,
-	})
+	}, nil)
 }
 
 func (bm *backupManager) makeExportJob(backup *v1alpha1.Backup) (*batchv1.Job, string, error) {
@@ -383,10 +387,10 @@ func (bm *backupManager) makeBackupJob(backup *v1alpha1.Backup) (*batchv1.Job, s
 		})
 	}
 
-	if tc.Spec.TiDB.TLSClient != nil && tc.Spec.TiDB.TLSClient.Enabled && !tc.SkipTLSWhenConnectTiDB() {
+	if backup.Spec.From != nil && tc.Spec.TiDB.TLSClient != nil && tc.Spec.TiDB.TLSClient.Enabled && !tc.SkipTLSWhenConnectTiDB() {
 		args = append(args, "--client-tls=true")
 		clientSecretName := util.TiDBClientTLSSecretName(backup.Spec.BR.Cluster)
-		if backup.Spec.From != nil && backup.Spec.From.TLSClientSecretName != nil {
+		if backup.Spec.From.TLSClientSecretName != nil {
 			clientSecretName = *backup.Spec.From.TLSClientSecretName
 		}
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
@@ -562,6 +566,10 @@ func (m *FakeBackupManager) SetSyncError(err error) {
 
 func (m *FakeBackupManager) Sync(_ *v1alpha1.Backup) error {
 	return m.err
+}
+
+func (m *FakeBackupManager) UpdateCondition(_ *v1alpha1.Backup, _ *v1alpha1.BackupCondition) error {
+	return nil
 }
 
 var _ backup.BackupManager = &FakeBackupManager{}
