@@ -209,6 +209,7 @@ type OperatorConfig struct {
 	AutoFailover              *bool
 	// Additional STRING values, set via --set-string flag.
 	StringValues map[string]string
+	Selector     map[string]string
 }
 
 type TidbClusterConfig struct {

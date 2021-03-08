@@ -588,6 +588,184 @@ var _ = ginkgo.Describe("[Serial]", func() {
 		})
 	})
 
+	ginkgo.Describe("Canary Deploy Operator from 1.1.10 to latest", func() {
+		var oa *tests.OperatorActions
+		var ocfg *tests.OperatorConfig
+		var operatorVersion string
+
+		ginkgo.BeforeEach(func() {
+			operatorVersion = "v1.1.10"
+			ocfg = &tests.OperatorConfig{
+				Namespace:       ns,
+				ReleaseName:     "operator",
+				Tag:             operatorVersion,
+				Image:           fmt.Sprintf("pingcap/tidb-operator:%s", operatorVersion),
+				ImagePullPolicy: v1.PullIfNotPresent,
+			}
+			oa = tests.NewOperatorActions(cli, c, asCli, aggrCli, apiExtCli, tests.DefaultPollInterval, ocfg, e2econfig.TestConfig, nil, fw, f)
+			ginkgo.By("Installing CRDs")
+			oa.DeployReleasedCRDOrDie(operatorVersion)
+			ginkgo.By("Installing tidb-operator")
+			oa.CleanOperatorOrDie(ocfg)
+			oa.DeployOperatorOrDie(ocfg)
+		})
+
+		ginkgo.AfterEach(func() {
+			ginkgo.By("Uninstall tidb-operator")
+			oa.CleanOperatorOrDie(ocfg)
+			ginkgo.By("Uninstalling CRDs")
+			tests.CleanReleasedCRDOrDie(operatorVersion)
+		})
+
+		ginkgo.It("Deploy TidbCluster and check the result", func() {
+			ginkgo.By(fmt.Sprintf("deploy original tc %q", utilimage.TiDBV4))
+			tcName := "tidbcluster"
+			tc := fixture.GetTidbCluster(ns, tcName, utilimage.TiDBV4)
+			tc.Spec.PD.Replicas = 3
+			tc.Spec.TiKV.Replicas = 1
+			tc.Spec.TiDB.Replicas = 1
+
+			err := genericCli.Create(context.TODO(), tc)
+			framework.ExpectNoError(err, "Expected TiDB cluster created")
+			err = oa.WaitForTidbClusterReady(tc, 6*time.Minute, 5*time.Second)
+			framework.ExpectNoError(err, "Expected TiDB cluster ready")
+
+			getPods := func(ls string) ([]v1.Pod, error) {
+				listOptions := metav1.ListOptions{
+					LabelSelector: ls,
+				}
+				podList, err := c.CoreV1().Pods(ns).List(listOptions)
+				if err != nil {
+					return nil, err
+				}
+				return podList.Items, nil
+			}
+
+			tidbPods, err := getPods(labels.SelectorFromSet(label.New().Instance(tcName).TiDB().Labels()).String())
+			framework.ExpectNoError(err, "failed to get tidb pods")
+
+			ginkgo.By("Set --selector=version=old for the default TiDB Operator")
+			ocfg.Selector = map[string]string{"version": "old"}
+			ocfg.Tag = cfg.OperatorTag
+			ocfg.Image = cfg.OperatorImage
+			oa.InstallCRDOrDie(ocfg)
+			oa.UpgradeOperatorOrDie(ocfg)
+
+			ginkgo.By("Upgrade TiDB of TidbCluster 1, wait for 1min, check that no rolling update occurs")
+			err = controller.GuaranteedUpdate(genericCli, tc, func() error {
+				tc.Spec.Version = utilimage.TiDBNightlyVersion
+				return nil
+			})
+			framework.ExpectNoError(err, "failed to update TidbCluster 1 to upgrade tidb version to %v", utilimage.TiDBV4)
+
+			err = wait.Poll(5*time.Second, 5*time.Minute, func() (done bool, err error) {
+				// confirm the tidb haven't been changed
+				changed, err := utilpod.PodsAreChanged(c, tidbPods)()
+				if err != nil {
+					log.Logf("ERROR: meet error during verify tidb pods, err:%v", err)
+					return true, nil
+				}
+				if changed {
+					return true, nil
+				}
+				log.Logf("confirm tidb pods haven't been changed this time")
+
+				return false, nil
+			})
+			framework.ExpectEqual(err, wait.ErrWaitTimeout, "expect pd/tikv/tidb haven't been changed for 5 minutes")
+
+			ginkgo.By("Set label version=old to TidbCluster 1, check that TiKV of TidbCluster 1 is rolling updated")
+			err = controller.GuaranteedUpdate(genericCli, tc, func() error {
+				tc.Labels = map[string]string{"version": "old"}
+				return nil
+			})
+			framework.ExpectNoError(err, "failed to update TidbCluster 1 to set lable version=old")
+
+			err = wait.Poll(5*time.Second, 5*time.Minute, func() (done bool, err error) {
+				// confirm the tidb haven't been changed
+				changed, err := utilpod.PodsAreChanged(c, tidbPods)()
+				if err != nil {
+					log.Logf("ERROR: meet error during verify tidb pods, err:%v", err)
+					return true, nil
+				}
+				if changed {
+					return true, nil
+				}
+				log.Logf("confirm tidb pods haven't been changed this time")
+
+				return false, nil
+			})
+			framework.ExpectNoError(err, wait.ErrWaitTimeout, "expect pd/tikv/tidb have been changed for 5 minutes")
+
+			ginkgo.By("Deploy TidbCluster 2 with label version=new")
+			tc2Name := "tidbcluster2"
+			tc2 := fixture.GetTidbCluster(ns, tc2Name, utilimage.TiDBV4)
+			tc2.Spec.PD.Replicas = 3
+			tc2.Spec.TiKV.Replicas = 1
+			tc2.Spec.TiDB.Replicas = 1
+			tc2.Labels = map[string]string{"version": "new"}
+
+			err = genericCli.Create(context.TODO(), tc2)
+			framework.ExpectNoError(err, "Expected TiDB cluster created")
+
+			ginkgo.By("wait for 1min and check that no Pod created")
+			getPods = func(ls string) ([]v1.Pod, error) {
+				listOptions := metav1.ListOptions{
+					LabelSelector: ls,
+				}
+				podList, err := c.CoreV1().Pods(ns).List(listOptions)
+				if err != nil {
+					return nil, err
+				}
+				return podList.Items, nil
+			}
+			tidbPods, _ = getPods(labels.SelectorFromSet(label.New().Instance(tc2Name).TiDB().Labels()).String())
+			framework.ExpectEqual(len(tidbPods), 0, "tidbcluster2 no Pod created")
+
+			ginkgo.By("Deploy TiDB Operator 2 with --selector=version=new")
+			operatorVersion = "v1.1.10"
+			ocfg2 := &tests.OperatorConfig{
+				Namespace:       ns,
+				ReleaseName:     "operator2",
+				Tag:             operatorVersion,
+				Image:           fmt.Sprintf("pingcap/tidb-operator:%s", operatorVersion),
+				ImagePullPolicy: v1.PullIfNotPresent,
+				Selector:        map[string]string{"version": "new"},
+			}
+			oa.DeployOperatorOrDie(ocfg2)
+
+			ginkgo.By("Check TidbCluster 2 is ready")
+			err = oa.WaitForTidbClusterReady(tc2, 6*time.Minute, 5*time.Second)
+			framework.ExpectNoError(err, "Expected TiDB cluster2 ready")
+
+			ginkgo.By("Delete the default TiDB Operator")
+			oa.CleanOperatorOrDie(ocfg)
+
+			ginkgo.By("Upgrade TiDB version of TidbCluster 2")
+			err = controller.GuaranteedUpdate(genericCli, tc2, func() error {
+				tc.Spec.Version = utilimage.TiDBNightlyVersion
+				return nil
+			})
+			framework.ExpectNoError(err, "failed to update TidbCluster 2 to upgrade tidb version to %v", utilimage.TiDBNightlyVersion)
+
+			ginkgo.By(fmt.Sprintf("wait for TidbCluster 2 tikv-0 pod upgrading to %q", utilimage.TiDBNightlyVersion))
+			err = wait.Poll(5*time.Second, 10*time.Minute, func() (done bool, err error) {
+				tikvPod, err := c.CoreV1().Pods(ns).Get(fmt.Sprintf("%s-tikv-0", tc2.Name), metav1.GetOptions{})
+				if err != nil {
+					return false, nil
+				}
+				if tikvPod.Spec.Containers[0].Image != fmt.Sprintf("pingcap/tikv:%s", utilimage.TiDBNightlyVersion) {
+					return false, nil
+				}
+				return true, nil
+			})
+			framework.ExpectNoError(err, "failed to upgrade tikv-0 to %q", utilimage.TiDBNightlyVersion)
+
+			//Song: Install the default TiDB Operator again with --selector=version=old
+
+			//Song: Delete TiDB Operator 2, update TiKV version of TidbCluster 1, check that TiKV of TidbCluster 1 is rolling updated
+		})
+	})
 	ginkgo.Describe("upgrading tidb-operator in the same minor series", func() {
 		var oa *tests.OperatorActions
 		var ocfg *tests.OperatorConfig
